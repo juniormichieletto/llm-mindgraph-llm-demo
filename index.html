@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Simulador de Persona LLM</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0f172a; /* Slate 900 */
+            color: #f8fafc;
+            font-family: 'Inter', sans-serif;
+            touch-action: manipulation; /* Melhora toque no mobile */
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 0;
+        }
+        .ui-layer {
+            position: relative;
+            z-index: 10;
+            pointer-events: none; /* Deixa cliques passarem para o espaço vazio */
+        }
+        .interactive {
+            pointer-events: auto; /* Habilita cliques em botões/painéis */
+        }
+        
+        /* Custom scrollbar for output */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 2px; }
+    </style>
+</head>
+<body class="antialiased selection:bg-cyan-500 selection:text-white flex flex-col h-screen">
+
+    <!-- Canvas para a Rede -->
+    <canvas id="networkCanvas"></canvas>
+
+    <!-- UI Overlay (Totalmente Responsiva) -->
+    <div class="ui-layer flex flex-col h-full p-3 sm:p-6 justify-between overflow-y-auto">
+        
+        <!-- Bloco Superior (Controles, Cabeçalho e Prompts) -->
+        <div class="flex flex-col gap-3 sm:gap-4 w-full max-w-4xl mx-auto">
+            
+            <!-- Barra de Topo (View & Lang) -->
+            <div class="interactive flex flex-wrap justify-between items-center gap-2 z-20">
+                <button onclick="toggleView()" id="btn-toggle-view" class="px-3 py-1.5 sm:px-4 sm:py-2 text-xs font-bold rounded-full bg-indigo-900/80 text-indigo-200 hover:bg-indigo-800 transition-colors border border-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.3)]">
+                    Visualização: Matriz
+                </button>
+                <div class="flex gap-2">
+                    <button onclick="setLanguage('pt')" id="btn-lang-pt" class="px-2 py-1 text-xs font-bold rounded bg-slate-700 text-white hover:bg-slate-600 transition-colors opacity-100 border border-slate-500">PT</button>
+                    <button onclick="setLanguage('en')" id="btn-lang-en" class="px-2 py-1 text-xs font-bold rounded bg-slate-700 text-white hover:bg-slate-600 transition-colors opacity-50 border border-slate-500">EN</button>
+                </div>
+            </div>
+
+            <!-- Cabeçalho -->
+            <header class="interactive backdrop-blur-md bg-slate-900/70 p-4 sm:p-6 rounded-2xl border border-slate-700 shadow-xl shadow-black/50">
+                <h1 id="text-title" class="text-xl sm:text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-purple-500 mb-2 leading-tight">
+                    Simulador de Ativação de Persona
+                </h1>
+                <p id="text-desc" class="text-slate-300 text-xs sm:text-sm leading-relaxed hidden sm:block">
+                    Esta visualização mostra como um Modelo de Linguagem Grande (LLM) acessa sua "rede de conhecimentos". 
+                    O centro representa a compreensão básica de linguagem. Quando você adiciona um <strong>Prompt de Persona</strong>, 
+                    os "pesos" da rede direcionam o processamento para clusters específicos de conceitos, ativando o vocabulário e o tom corretos.
+                </p>
+                <p id="text-desc-mobile" class="text-slate-300 text-xs leading-relaxed sm:hidden">
+                    Veja como um LLM direciona "atenção" para diferentes conceitos baseados no prompt escolhido.
+                </p>
+            </header>
+
+            <!-- Controles / Botões de Prompt -->
+            <div class="interactive flex flex-wrap gap-2 sm:gap-3">
+                <button id="btn-base" onclick="triggerPrompt('base')" class="flex-1 sm:flex-none text-center px-3 py-2 sm:px-5 sm:py-2.5 rounded-xl sm:rounded-full text-xs sm:text-sm font-medium transition-all duration-300 bg-slate-700 hover:bg-slate-600 border border-slate-500 hover:shadow-[0_0_10px_rgba(148,163,184,0.5)]">
+                    Padrão
+                </button>
+                <button id="btn-pirata" onclick="triggerPrompt('pirata')" class="flex-1 sm:flex-none text-center px-3 py-2 sm:px-5 sm:py-2.5 rounded-xl sm:rounded-full text-xs sm:text-sm font-medium transition-all duration-300 bg-orange-900/60 hover:bg-orange-800/80 border border-orange-500 text-orange-200 hover:shadow-[0_0_10px_rgba(249,115,22,0.5)]">
+                    Pirata
+                </button>
+                <button id="btn-programador" onclick="triggerPrompt('programador')" class="flex-1 sm:flex-none text-center px-3 py-2 sm:px-5 sm:py-2.5 rounded-xl sm:rounded-full text-xs sm:text-sm font-medium transition-all duration-300 bg-cyan-900/60 hover:bg-cyan-800/80 border border-cyan-500 text-cyan-200 hover:shadow-[0_0_10px_rgba(6,182,212,0.5)]">
+                    Eng. Software
+                </button>
+                <button id="btn-poeta" onclick="triggerPrompt('poeta')" class="flex-1 sm:flex-none text-center px-3 py-2 sm:px-5 sm:py-2.5 rounded-xl sm:rounded-full text-xs sm:text-sm font-medium transition-all duration-300 bg-purple-900/60 hover:bg-purple-800/80 border border-purple-500 text-purple-200 hover:shadow-[0_0_10px_rgba(168,85,247,0.5)]">
+                    Poeta
+                </button>
+            </div>
+        </div>
+
+        <!-- Bloco Inferior: Saída do Modelo e Footer -->
+        <div class="flex flex-col mt-4 sm:mt-auto mb-2 sm:mb-4 gap-2 w-full max-w-md mx-auto sm:ml-auto sm:mr-0">
+            <!-- Caixa de Saída -->
+            <div class="interactive backdrop-blur-md bg-slate-900/80 p-4 sm:p-5 rounded-2xl border border-slate-700 shadow-2xl">
+                <div class="flex items-center gap-2 mb-2 sm:mb-3 border-b border-slate-700 pb-2">
+                    <div class="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></div>
+                    <h3 id="text-output-title" class="text-xs sm:text-sm font-semibold text-slate-300 uppercase tracking-wider">Saída do Modelo</h3>
+                </div>
+                <div id="output-text" class="text-slate-200 min-h-[80px] sm:min-h-[100px] text-xs sm:text-sm leading-relaxed font-mono overflow-y-auto max-h-32 sm:max-h-48">
+                    Aguardando prompt...
+                </div>
+            </div>
+            
+            <!-- Footer (Criador) -->
+            <div class="interactive text-center sm:text-right mt-1">
+                <p class="text-[10px] sm:text-xs text-slate-400">
+                    <span id="text-created-by">Criado por</span> 
+                    <a href="https://github.com/juniormichieletto" target="_blank" rel="noopener noreferrer" class="font-semibold text-cyan-400 hover:text-cyan-300 transition-colors px-1 py-0.5 rounded hover:bg-slate-800">
+                        AJ (juniormichieletto)
+                    </a>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('networkCanvas');
+        const ctx = canvas.getContext('2d');
+        const outputText = document.getElementById('output-text');
+
+        let width, height;
+        let nodes = [];
+        let edges = [];
+        let particles = [];
+        let activePersona = 'base';
+        let currentLang = 'pt';
+        let currentView = 'graph';
+        let matrixCells = [];
+        const matrixCols = 60;
+        const matrixRows = 40;
+        let pulseInterval;
+        let isMobile = false;
+
+        const translations = {
+            pt: {
+                title: "Simulador de Ativação de Persona",
+                desc: "Esta visualização mostra como um Modelo de Linguagem Grande (LLM) acessa sua \"rede de conhecimentos\". O centro representa a compreensão básica de linguagem. Quando você adiciona um <strong>Prompt de Persona</strong>, os \"pesos\" da rede direcionam o processamento para clusters específicos de conceitos.",
+                descMobile: "Veja como um LLM direciona \"atenção\" para diferentes conceitos baseados no prompt escolhido.",
+                btnBase: "Padrão",
+                btnPirata: "\"Pirata\"",
+                btnProgramador: "\"Eng. Software\"",
+                btnPoeta: "\"Poeta\"",
+                viewGraph: "Visão: Grafo (Rede)",
+                viewMatrix: "Visão: Matriz (Pesos)",
+                outputTitle: "Saída do Modelo",
+                waiting: "Aguardando prompt...",
+                createdBy: "Criado por",
+                labels: {
+                    base: "Base",
+                    pirata: "Pirata",
+                    programador: "Lógica",
+                    poeta: "Poesia"
+                },
+                respostas: {
+                    base: "Olá. Como posso ajudar você com suas tarefas hoje? Posso responder perguntas, traduzir textos ou ajudar com análises.",
+                    pirata: "Arrr, marujo! Levantem as âncoras! O que um lobo do mar como eu pode fazer por vossa senhoria neste oceano de dados? Preparado para saquear informações!",
+                    programador: "System init... Olá, mundo! Estou pronto para otimizar algoritmos, debugar seu código ou discutir arquiteturas de software. Qual é a stack de hoje?",
+                    poeta: "Ah, doce visitante desta tela gélida! Que versos desejas que eu teça sob o luar binário? Permita-me transformar tuas dúvidas em poesia pura."
+                }
+            },
+            en: {
+                title: "Persona Activation Simulator",
+                desc: "This visualization shows how a Large Language Model (LLM) accesses its \"knowledge network\". The center represents basic language understanding. When you add a <strong>Persona Prompt</strong>, the network's \"weights\" direct processing to specific concept clusters.",
+                descMobile: "See how an LLM directs \"attention\" to different concepts based on the chosen prompt.",
+                btnBase: "Default",
+                btnPirata: "\"Pirate\"",
+                btnProgramador: "\"Software Eng.\"",
+                btnPoeta: "\"Poet\"",
+                viewGraph: "View: Graph",
+                viewMatrix: "View: Matrix",
+                outputTitle: "Model Output",
+                waiting: "Waiting for prompt...",
+                createdBy: "Created by",
+                labels: {
+                    base: "Base",
+                    pirata: "Pirate",
+                    programador: "Logic",
+                    poeta: "Poetry"
+                },
+                respostas: {
+                    base: "Hello. How can I help you with your tasks today? I can answer questions, translate texts, or help with analysis.",
+                    pirata: "Arrr, matey! Weigh anchor! What can a sea dog like me do for ye in this ocean of data? Ready to plunder some information!",
+                    programador: "System init... Hello, world! I'm ready to optimize algorithms, debug your code, or discuss software architectures. What's the stack today?",
+                    poeta: "Ah, sweet visitor of this frigid screen! What verses do you wish me to weave under the binary moonlight? Allow me to transform your doubts into pure poetry."
+                }
+            }
+        };
+
+        const clusters = {
+            base: { id: 0, color: '148, 163, 184', name: 'Base' },
+            pirata: { id: 1, color: '249, 115, 22', name: 'Pirata' },
+            programador: { id: 2, color: '6, 182, 212', name: 'TI' },
+            poeta: { id: 3, color: '168, 85, 247', name: 'Poeta' }
+        };
+
+        function resizeCanvas() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+            isMobile = width < 768;
+            
+            // Recalcular posições originais dos nós se redimensionado
+            if (nodes.length > 0) {
+                const centerX = width / 2;
+                const centerY = height / 2;
+                const radius = Math.min(width, height) * (isMobile ? 0.25 : 0.35);
+
+                nodes.forEach((node, i) => {
+                    let cx, cy;
+                    if (node.cluster === 'base') {
+                        cx = centerX; cy = centerY;
+                    } else if (node.cluster === 'pirata') {
+                        cx = centerX - radius * (isMobile ? 1.0 : 0.8);
+                        cy = centerY - radius * 0.5;
+                    } else if (node.cluster === 'programador') {
+                        cx = centerX + radius * (isMobile ? 1.0 : 0.8);
+                        cy = centerY - radius * 0.5;
+                    } else {
+                        cx = centerX;
+                        cy = centerY + radius * (isMobile ? 0.9 : 0.7);
+                    }
+
+                    // Aproximação suave da nova posição
+                    node.originX = cx + Math.cos(node.originalAngle) * node.originalDist * (isMobile ? 0.7 : 1);
+                    node.originY = cy + Math.sin(node.originalAngle) * node.originalDist * (isMobile ? 0.7 : 1);
+                });
+            }
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+
+        function initLanguage() {
+            const userLang = navigator.language || navigator.userLanguage;
+            if (userLang.toLowerCase().startsWith('en')) setLanguage('en', false);
+            else setLanguage('pt', false);
+        }
+
+        function setLanguage(lang, retrigger = true) {
+            currentLang = lang;
+            const t = translations[lang];
+            
+            document.getElementById('text-title').innerHTML = t.title;
+            document.getElementById('text-desc').innerHTML = t.desc;
+            document.getElementById('text-desc-mobile').innerHTML = t.descMobile;
+            document.getElementById('btn-base').innerText = t.btnBase;
+            document.getElementById('btn-pirata').innerText = t.btnPirata;
+            document.getElementById('btn-programador').innerText = t.btnProgramador;
+            document.getElementById('btn-poeta').innerText = t.btnPoeta;
+            document.getElementById('text-output-title').innerText = t.outputTitle;
+            document.getElementById('text-created-by').innerText = t.createdBy;
+            document.getElementById('btn-toggle-view').innerText = t[currentView === 'graph' ? 'viewMatrix' : 'viewGraph'];
+            
+            if(outputText.innerHTML.trim() === translations['pt'].waiting || outputText.innerHTML.trim() === translations['en'].waiting) {
+                outputText.innerHTML = t.waiting;
+            }
+
+            document.getElementById('btn-lang-pt').style.opacity = lang === 'pt' ? '1' : '0.5';
+            document.getElementById('btn-lang-en').style.opacity = lang === 'en' ? '1' : '0.5';
+
+            if (retrigger) triggerPrompt(activePersona);
+        }
+
+        function initNetwork() {
+            nodes = [];
+            edges = [];
+            resizeCanvas();
+            
+            const numNodes = isMobile ? 100 : 150; // Menos nós no telemóvel para performance
+            const centerX = width / 2;
+            const centerY = height / 2;
+            const radius = Math.min(width, height) * (isMobile ? 0.25 : 0.35);
+
+            for (let i = 0; i < numNodes; i++) {
+                let clusterType;
+                let angle, dist;
+                let cx, cy;
+
+                let ratio = i / numNodes;
+                if (ratio < 0.25) { clusterType = 'base'; cx = centerX; cy = centerY; dist = Math.random() * radius * 0.5; } 
+                else if (ratio < 0.5) { clusterType = 'pirata'; cx = centerX - radius * 0.8; cy = centerY - radius * 0.5; dist = Math.random() * radius * 0.4; } 
+                else if (ratio < 0.75) { clusterType = 'programador'; cx = centerX + radius * 0.8; cy = centerY - radius * 0.5; dist = Math.random() * radius * 0.4; } 
+                else { clusterType = 'poeta'; cx = centerX; cy = centerY + radius * 0.7; dist = Math.random() * radius * 0.4; }
+
+                angle = Math.random() * Math.PI * 2;
+                let x = cx + Math.cos(angle) * dist;
+                let y = cy + Math.sin(angle) * dist;
+
+                nodes.push({
+                    id: i, x: x, y: y, originX: x, originY: y,
+                    originalAngle: angle, originalDist: dist,
+                    cluster: clusterType, color: clusters[clusterType].color,
+                    size: Math.random() * (isMobile ? 1.5 : 2) + 1,
+                    activation: 0, phase: Math.random() * Math.PI * 2
+                });
+            }
+
+            for (let i = 0; i < nodes.length; i++) {
+                for (let j = i + 1; j < nodes.length; j++) {
+                    let n1 = nodes[i], n2 = nodes[j];
+                    let distance = Math.hypot(n1.originX - n2.originX, n1.originY - n2.originY);
+                    let maxDist = (n1.cluster === n2.cluster) ? (isMobile ? 80 : 120) : (isMobile ? 120 : 200);
+                    let prob = (n1.cluster === n2.cluster) ? 0.15 : 0.02;
+
+                    if ((n1.cluster === 'base' || n2.cluster === 'base') && n1.cluster !== n2.cluster) { prob = 0.05; maxDist = isMobile ? 180 : 300; }
+                    if (distance < maxDist && Math.random() < prob) edges.push({ source: n1, target: n2 });
+                }
+            }
+        }
+
+        function initMatrix() {
+            matrixCells = [];
+            for (let r = 0; r < matrixRows; r++) {
+                for (let c = 0; c < matrixCols; c++) {
+                    let clusterType = 'base';
+                    if (c > 10 && c <= 22) clusterType = 'pirata';
+                    else if (c > 26 && c <= 38) clusterType = 'programador';
+                    else if (c > 42 && c <= 54) clusterType = 'poeta';
+                    matrixCells.push({ row: r, col: c, cluster: clusterType, activation: Math.random() * 0.2, baseNoise: Math.random() * 0.1, phase: Math.random() * Math.PI * 2 });
+                }
+            }
+        }
+
+        function updatePhysics() {
+            nodes.forEach(node => {
+                node.x = node.originX + Math.cos(time + node.phase) * (isMobile ? 5 : 10);
+                node.y = node.originY + Math.sin(time + node.phase) * (isMobile ? 5 : 10);
+                if (node.activation > 0) node.activation -= 0.01;
+                if (node.activation < 0) node.activation = 0;
+                if (Math.random() < 0.005) node.activation = Math.random() * 0.3;
+            });
+
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];
+                p.progress += p.speed;
+                if (p.progress >= 1) {
+                    p.target.activation = Math.min(1, p.target.activation + 0.5);
+                    particles.splice(i, 1);
+                    if (p.target.cluster === activePersona || p.target.cluster === 'base') {
+                        edges.forEach(edge => {
+                            if (edge.source === p.target && Math.random() < 0.3 && particles.length < (isMobile ? 80 : 150)) spawnParticle(edge.source, edge.target, p.color);
+                            else if (edge.target === p.target && Math.random() < 0.3 && particles.length < (isMobile ? 80 : 150)) spawnParticle(edge.target, edge.source, p.color);
+                        });
+                    }
+                }
+            }
+        }
+
+        function drawGraph() {
+            ctx.lineWidth = 0.5;
+            edges.forEach(edge => {
+                let act = (edge.source.activation + edge.target.activation) / 2;
+                if (act > 0.1) {
+                    let color = edge.target.cluster === activePersona && activePersona !== 'base' ? clusters[activePersona].color : clusters[edge.source.cluster].color;
+                    ctx.beginPath(); ctx.moveTo(edge.source.x, edge.source.y); ctx.lineTo(edge.target.x, edge.target.y);
+                    ctx.strokeStyle = `rgba(${color}, ${act * 0.8})`; ctx.stroke();
+                } else {
+                    ctx.beginPath(); ctx.moveTo(edge.source.x, edge.source.y); ctx.lineTo(edge.target.x, edge.target.y);
+                    ctx.strokeStyle = `rgba(148, 163, 184, 0.05)`; ctx.stroke();
+                }
+            });
+
+            particles.forEach(p => {
+                let px = p.source.x + (p.target.x - p.source.x) * p.progress;
+                let py = p.source.y + (p.target.y - p.source.y) * p.progress;
+                ctx.beginPath(); ctx.arc(px, py, isMobile ? 1.5 : 2, 0, Math.PI * 2);
+                ctx.fillStyle = `rgb(${p.color})`; ctx.shadowBlur = 10; ctx.shadowColor = `rgb(${p.color})`; ctx.fill(); ctx.shadowBlur = 0;
+            });
+
+            nodes.forEach(node => {
+                let isTargetCluster = (node.cluster === activePersona);
+                ctx.beginPath(); ctx.arc(node.x, node.y, node.size + (node.activation * (isMobile ? 2 : 3)), 0, Math.PI * 2);
+                let opacity = 0.2 + (node.activation * 0.8);
+                if (isTargetCluster) opacity = 0.5 + (node.activation * 0.5);
+                ctx.fillStyle = `rgba(${node.color}, ${opacity})`;
+                if (node.activation > 0.2) { ctx.shadowBlur = node.activation * 10; ctx.shadowColor = `rgb(${node.color})`; } 
+                else { ctx.shadowBlur = 0; }
+                ctx.fill(); ctx.shadowBlur = 0;
+            });
+
+            // Rótulos do Grafo ajustados para mobile
+            ctx.font = isMobile ? "10px Inter, sans-serif" : "12px Inter, sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+            const labels = translations[currentLang].labels;
+            const radius = Math.min(width, height) * (isMobile ? 0.25 : 0.35);
+            ctx.fillText(labels.base, width/2, height/2 + 20);
+            ctx.fillText(labels.pirata, width/2 - radius * (isMobile ? 1.0 : 0.8), height/2 - radius * 0.5 + 30);
+            ctx.fillText(labels.programador, width/2 + radius * (isMobile ? 1.0 : 0.8), height/2 - radius * 0.5 + 30);
+            ctx.fillText(labels.poeta, width/2, height/2 + radius * (isMobile ? 0.9 : 0.7) + 30);
+        }
+
+        function drawMatrix() {
+            // Células menores no mobile para caberem no ecrã
+            let availableWidth = isMobile ? width - 20 : width;
+            let maxCellW = availableWidth / matrixCols;
+            let maxCellH = (height * 0.5) / matrixRows; // Deixa espaço para a UI
+            let cellSize = Math.floor(Math.min(maxCellW, maxCellH, 15)); 
+            if (cellSize < 2) cellSize = 2; // Tamanho mínimo de segurança
+            
+            let startX = (width - (matrixCols * cellSize)) / 2 + (!isMobile && width > 768 ? 100 : 0); 
+            // Posicionar mais abaixo no telemóvel para não colidir com os botões
+            let startY = isMobile ? (height * 0.35) : (height - (matrixRows * cellSize)) / 2;
+
+            matrixCells.forEach(cell => {
+                let noise = cell.baseNoise + Math.sin(time * 5 + cell.phase) * 0.05;
+                if (cell.activation > cell.baseNoise) cell.activation -= 0.02;
+                if (Math.random() < 0.0005) cell.activation = 0.8; 
+
+                let currentRow = Math.floor(time * 8) % matrixRows;
+                let isRowActive = (currentRow === cell.row);
+
+                if (cell.cluster === activePersona && activePersona !== 'base') {
+                    if (isRowActive || Math.random() < 0.02) cell.activation = 0.5 + Math.random() * 0.5;
+                } else if (activePersona === 'base' && cell.cluster === 'base') {
+                    if (isRowActive || Math.random() < 0.02) cell.activation = 0.4 + Math.random() * 0.4;
+                }
+
+                let act = Math.max(0, Math.min(1, cell.activation + noise));
+                let color = clusters[cell.cluster].color;
+                
+                if (cell.cluster !== activePersona && cell.cluster !== 'base') { color = clusters['base'].color; act *= 0.15; }
+
+                ctx.fillStyle = `rgba(${color}, ${act})`;
+                ctx.fillRect(startX + cell.col * cellSize, startY + cell.row * cellSize, cellSize - (isMobile?0:1), cellSize - (isMobile?0:1));
+            });
+
+            // Rótulos
+            ctx.font = isMobile ? "9px Inter, sans-serif" : "12px Inter, sans-serif";
+            ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+            ctx.textAlign = "center";
+            ctx.fillText(currentLang === 'pt' ? "Dimensões" : "Dimensions", startX + (matrixCols * cellSize) / 2, startY - 10);
+        }
+
+        let time = 0;
+        function animate() {
+            time += 0.01;
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.2)';
+            ctx.fillRect(0, 0, width, height);
+
+            updatePhysics(); 
+            if (currentView === 'graph') drawGraph();
+            else drawMatrix();
+            requestAnimationFrame(animate);
+        }
+
+        function toggleView() {
+            currentView = currentView === 'graph' ? 'matrix' : 'graph';
+            document.getElementById('btn-toggle-view').innerText = translations[currentLang][currentView === 'graph' ? 'viewMatrix' : 'viewGraph'];
+            triggerPrompt(activePersona);
+        }
+
+        function spawnParticle(source, target, color) {
+            particles.push({ source: source, target: target, progress: 0, speed: 0.02 + Math.random() * 0.03, color: color });
+        }
+
+        let typewriterTimeout;
+        function triggerPrompt(persona) {
+            activePersona = persona;
+            let targetColor = clusters[persona].color;
+            
+            clearTimeout(typewriterTimeout);
+            clearInterval(pulseInterval);
+            outputText.innerHTML = '';
+            typeWriterEffect(translations[currentLang].respostas[persona], 0);
+
+            let baseNodes = nodes.filter(n => n.cluster === 'base');
+            baseNodes.forEach(node => {
+                if (Math.random() < 0.3) {
+                    node.activation = 1;
+                    edges.forEach(edge => {
+                        if (edge.source === node && edge.target.cluster === persona) spawnParticle(edge.source, edge.target, targetColor);
+                        else if (edge.target === node && edge.source.cluster === persona) spawnParticle(edge.target, edge.source, targetColor);
+                    });
+                }
+            });
+
+            nodes.filter(n => n.cluster === persona).forEach(node => { if(Math.random() < 0.5) node.activation = 0.8; });
+            matrixCells.forEach(cell => { if (cell.cluster === persona || cell.cluster === 'base') if (Math.random() < 0.3) cell.activation = 1; });
+
+            let pulseCount = 0;
+            pulseInterval = setInterval(() => {
+                pulseCount++;
+                let startNode = baseNodes[Math.floor(Math.random() * baseNodes.length)];
+                if (startNode) startNode.activation = 1; 
+                
+                let targets = nodes.filter(n => n.cluster === persona);
+                if (targets.length > 0) {
+                    edges.filter(e => e.source === startNode || e.target === startNode).forEach(e => {
+                        let next = e.source === startNode ? e.target : e.source;
+                        if (next.cluster === persona || next.cluster === 'base') spawnParticle(startNode, next, targetColor);
+                    });
+                }
+                if (pulseCount > 20) clearInterval(pulseInterval);
+            }, 100);
+        }
+
+        function typeWriterEffect(text, index) {
+            if (index < text.length) {
+                outputText.innerHTML += text.charAt(index);
+                // Rola para baixo automaticamente se o texto for muito grande no mobile
+                outputText.scrollTop = outputText.scrollHeight;
+                let delay = Math.random() * 30 + 20; 
+                typewriterTimeout = setTimeout(() => typeWriterEffect(text, index + 1), delay);
+            }
+        }
+
+        initNetwork();
+        initMatrix();
+        animate();
+        initLanguage();
+        triggerPrompt('base');
+
+    </script>
+</body>
+</html>
