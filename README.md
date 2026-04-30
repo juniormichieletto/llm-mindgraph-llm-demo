@@ -2,6 +2,8 @@
 
 A visually immersive, interactive simulation of how Large Language Models (LLMs) navigate their "knowledge network" to adopt different personas.
 
+**[🌐 Live Demo](https://juniormichieletto.github.io/llm-mindgraph-llm-demo/)**
+
 ![Project Preview](https://img.shields.io/badge/Status-Active-brightgreen)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
