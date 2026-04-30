@@ -402,7 +402,7 @@
             let cellSize = Math.floor(Math.min(maxCellW, maxCellH, 15)); 
             if (cellSize < 2) cellSize = 2; // Tamanho mínimo de segurança
             
-            let startX = (width - (matrixCols * cellSize)) / 2 + (!isMobile && width > 768 ? 100 : 0); 
+            let startX = (width - (matrixCols * cellSize)) / 2; 
             // Posicionar mais abaixo no telemóvel para não colidir com os botões
             let startY = isMobile ? (height * 0.35) : (height - (matrixRows * cellSize)) / 2;
 
